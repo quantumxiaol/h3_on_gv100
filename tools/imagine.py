@@ -28,7 +28,7 @@ def main() -> None:
     p.add_argument("--quality", default="high", choices=["low", "medium", "high", "auto"])
     p.add_argument("--width", type=int, default=960, help="视频宽（自动对齐 32）")
     p.add_argument("--height", type=int, default=544, help="视频高（自动对齐 32）")
-    p.add_argument("--frames", type=int, default=73, help="自动对齐 17n+5；73≈3s")
+    p.add_argument("--frames", type=int, default=124, help="向上对齐 17n+5，范围 124–345；124≈5.2s")
     p.add_argument("--steps", type=int, default=50, help="基线 50；Turbo LoRA 后 8")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out", default="out/imagine")

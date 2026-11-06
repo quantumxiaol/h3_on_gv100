@@ -8,7 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from h3_gv100.client import ApiHttpError, GenImgClient, H3Client
-from h3_gv100.common import b64encode, snap_to_32, snap_to_grid
+from h3_gv100.common import MAX_FRAMES, MIN_FRAMES, b64encode, snap_frames, snap_to_32
 from h3_gv100.schemas import CreateVideoRequest
 
 PNG = base64.b64decode(
@@ -18,10 +18,14 @@ MP4 = b"\x00\x00\x00\x18ftypmp42fake-video"
 
 
 def test_grid():
-    assert snap_to_grid(73) == 73
-    assert snap_to_grid(80) == 73
-    assert snap_to_grid(1) == 73
-    assert snap_to_grid(124) == 124
+    # 向上对齐 17n+5 并夹到 5–15s 窗口 [124, 345]
+    assert snap_frames(124) == 124
+    assert snap_frames(125) == 141
+    assert snap_frames(73) == MIN_FRAMES      # 低于 5s 被抬到下限
+    assert snap_frames(80) == MIN_FRAMES      # 对齐到 90 仍不足 5s
+    assert snap_frames(107) == MIN_FRAMES     # 4.46s 也低于窗口
+    assert snap_frames(345) == MAX_FRAMES
+    assert snap_frames(1000) == MAX_FRAMES
     assert snap_to_32(960) == 960
     assert snap_to_32(545) == 544
     assert snap_to_32(100) == 160
@@ -129,7 +133,7 @@ def test_genimg_http_error_has_status():
 def test_h3_client_roundtrip():
     c = H3Client(_serve(), api_key="k")
     assert c.health()["engine"] == "ready"
-    job_id = c.submit(CreateVideoRequest(prompt="hi", image_b64=b64encode(PNG)))
+    job_id = c.submit(CreateVideoRequest(prompt="hi", image_b64=b64encode(PNG), last_image_b64=b64encode(PNG)))
     assert job_id == "abc"
     info = c.wait(job_id, interval=0.01)
     assert info["status"] == "done"
@@ -139,4 +143,4 @@ def test_h3_client_roundtrip():
 
 def test_request_normalization():
     req = CreateVideoRequest(prompt="x", frames=80, width=1000, height=545).normalized()
-    assert req.frames == 73 and req.width == 992 and req.height == 544
+    assert req.frames == 124 and req.width == 992 and req.height == 544

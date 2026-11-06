@@ -15,12 +15,12 @@ MiniMax-H3 权重（modelsweights/，scripts/download_modelscope.py 从 modelsco
     │
     ▼
 diffusers ModularPipeline（workflow="fl2va"）
-    + ComponentsManager.enable_auto_cpu_offload  ← 权重 ~123GB FP16 驻内存，
+    + ComponentsManager.enable_auto_cpu_offload  ← 权重 ~144GB FP16 驻内存，
     │                                              逐组件换入 32GB 显存
     ├─ dtype: 全链路 FP16（V100 无 BF16；--dit-dtype float32 为排障开关）
     ├─ attention: SDPA（强制；Volta 不支持 FA2/SageAttention，禁装 flash-attn）
     ├─ 步数: 50 步基线 → Turbo LoRA 8 步（ModelTC Minimax-H3-Turbo，M1 接入）
-    └─ 网格: 帧数 17n+5（73/90/107/124…），宽高 32 倍数；CFG 蒸馏模型，无 negative prompt
+    └─ 网格: 帧数 17n+5 且 5–15s 窗口（124/141/…/345），宽高 32 倍数；CFG 蒸馏模型，无 negative prompt
     │
     ▼
 产物：video_only.mp4（24fps H.264）+ audio.wav（32kHz）→ ffmpeg 合流成片
@@ -32,13 +32,14 @@ diffusers ModularPipeline（workflow="fl2va"）
 
 ### M0 冒烟跑通（当前）
 
-- 任务：跑通 `infer.py`，出第一条 3 秒 960×544、50 步的视频。
+- 任务：跑通 `infer.py`，出第一条 5 秒 960×544、50 步的视频。
 - 预期难点：H3 进 diffusers 仅数月，ModularPipeline 调用细节（参数名/返回结构）可能随版本漂移，需按报错适配 1–2 处；首次推理 20–40 分钟。
+- 参考预期：官方公布 2×RTX 5090 32GB + TP2 layerwise 卸载跑 50 步端到端 559s；本机 diffusers 按组件 offload + PCIe Gen3，预期更慢（20–40 分钟），实测值回填本节。
 - 验收：`out/smoke.mp4` 可播放，音画同步，画面无 NaN 花屏。
 
 ### M0.5 API 服务化（已建骨架，待 M0 后验证）
 
-- 任务：FastAPI 异步 job 服务（`h3-server`）+ 本机客户端（`h3-client`）+ 整体工作流（`h3-imagine`：想法 → 生图 API 首帧 → 图生视频）。文件走 base64。公网入口由用户配置内网穿透。
+- 任务：FastAPI 异步 job 服务（`h3-server`）+ 本机客户端（`h3-client`）+ 整体工作流（`h3-imagine`：想法 → 生图 API 首帧 → 图生视频）。文件走 base64。公网入口由用户配置内网穿透。已支持 FL2VA 全模式：t2va（无图）/ i2va（首帧）/ fl2va（首尾帧）/ l2va（尾帧），对应 `image_b64` / `last_image_b64`。
 - 状态：代码完成（h3_gv100/server.py、client.py、tools/），客户端链路在本机有 pytest 覆盖；服务端依赖 M0 的引擎验证。
 - 验收：本机 curl/客户端提交 → 轮询 → 取回 base64 mp4 闭环；`h3-imagine` 一条命令从想法到成片。
 
@@ -49,7 +50,7 @@ diffusers ModularPipeline（workflow="fl2va"）
 
 ### M2 双卡分片（被占卡回归后）
 
-- 任务：DiT FP16（66GB）分片双卡常驻（每卡 ~33G），编码器/VAE 走 offload，卡间搬运走 NV4。
+- 任务：按 diffusers 官方 two-card 配方实现（`sub_blocks.pop` 拆出 text_encoder 半区 + 独立 ComponentsManager + `init_pipeline` 合并）：text_encoder（66.7GB）与其余组件分挂两卡做 auto offload，卡间搬运走 NV4。参考官方文档 "With two cards nothing has to be offloaded" 配方；若显存放不下 62GB 编码器则退回按组件 offload（现状）。
 - 预期：3–5 分钟/条。
 - 验收：双卡模式稳定跑 3 条不 OOM、不静默降质。
 

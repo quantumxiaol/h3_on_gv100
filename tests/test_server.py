@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-import h3_gv100.server as server_mod  # noqa: E402
+import h3_gv100.server as server_mod
 
 MP4 = b"\x00\x00\x00\x18ftypmp42fake-video"
 WAV = b"RIFFfake-wave"
@@ -71,7 +71,8 @@ def test_job_roundtrip_base64(client):
     r = client.post(
         "/v1/videos",
         headers=h,
-        json={"prompt": "red panda", "image_b64": png_b64, "frames": 80, "steps": 50},
+        json={"prompt": "red panda", "image_b64": png_b64, "last_image_b64": png_b64,
+              "frames": 80, "steps": 50},
     )
     assert r.status_code == 202
     job_id = r.json()["job_id"]
@@ -82,7 +83,8 @@ def test_job_roundtrip_base64(client):
             break
         time.sleep(0.02)
     assert info["status"] == "done", info.get("detail")
-    assert info["request"]["frames"] == 73  # 服务端归一化到 17n+5
+    assert info["request"]["frames"] == 124  # 服务端对齐 17n+5 并夹到 5–15s 窗口
+    assert info["request"]["last_image_b64"] == png_b64  # FL2VA 尾帧透传
     assert set(info["outputs"]) == {"mp4", "audio"}
 
     content = client.get(f"/v1/videos/{job_id}/content", headers=h).json()

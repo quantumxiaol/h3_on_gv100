@@ -12,7 +12,7 @@
 
 - H3 开放权重仅含 H3-Base：768p、4–15 秒、24fps、视频+32kHz 立体声同出；2K 精修（Regenerate-2K）与 prompt 增强（Context-IR）只有官方 API，后期 M3 才接入。
 - 本机 GPU 是 Quadro GV100（32GB HBM2，无 BF16，Tensor Core 仅 FP16，PCIe Gen3 x16，双卡 NV4 互联），驱动 525.105.17，torch 2.8 已实测可跑。
-- 机器 504GB 内存，权重 FP16 全量约 123GB 驻内存做 offload，不量化。
+- 机器 504GB 内存，fl2va 用到的 diffusers 权重约 144GB（transformer 66.3 + Qwen3-VL 66.7 + VAE 11GB），FP16 驻内存做 offload，不量化。
 - 这是 4 人共用的工作站（有桌面环境），不是云服务器。
 
 ## 技术路线（已锁定，偏离需先论证）
@@ -20,8 +20,8 @@
 1. **框架**：diffusers `ModularPipeline`（workflow="fl2va"）+ `ComponentsManager.enable_auto_cpu_offload`。不走 SGLang/vLLM（SM70 无验证、依赖 FA2/SageAttention）。
 2. **精度**：全链路 FP16。V100 无 BF16 单元，严禁使用 bfloat16 加载。
 3. **attention**：SDPA。不要安装/启用 flash-attn、SageAttention、FlashAttention-2 —— Volta 会 kernel 崩溃或静默回退。
-4. **网格约束**：帧数必须 `17n+5`（73/90/107/124…），宽高 32 的倍数；H3 是 CFG 蒸馏模型，**不要加 negative prompt / guidance 参数**。
-5. **模型源**：`MiniMaxAI/MiniMax-H3`，下载到 `modelsweights/MiniMax-H3`——ModelScope 用 `scripts/download_modelscope.py`，HuggingFace 用 `scripts/download_huggingface.py`（默认 hf-mirror.com）；两脚本同一目标目录，可换源续传。
+4. **网格约束**：帧数 `17n+5` 且时长必须落在 5–15 秒窗口（即 **124/141/…/345**，更低会被夹到 124；73 ≈ 3 秒不满足模型约束），宽高 32 的倍数；H3 是 CFG 蒸馏模型，**不要加 negative prompt / guidance 参数**。
+5. **模型源**：官方 HF 仓库 `MiniMaxAI/MiniMax-H3`（ModelScope 镜像 `MiniMax/MiniMax-H3`，revision 一致性无公开保证，可复现基线用 HF 固定 `--revision`），下载到 `modelsweights/MiniMax-H3`。默认只下 fl2va 的 diffusers 部分（~144GB），`--full` 才整仓（~500GB）。两个下载脚本同一目标目录，可换源续传。
 6. **产物**：视频 24fps + 音频 32kHz，ffmpeg 合流 MP4。
 
 ## 硬性约束
@@ -45,10 +45,10 @@
 
 ```bash
 cd ~/h3_on_gv100 && uv sync --extra server --extra cu126
-# 确认模型已下载完：ls modelsweights/MiniMax-H3 应有 FL2VA/、model_index.json 等，~123GB
+# 确认模型已下载完：ls modelsweights/MiniMax-H3 应有 model_index.json、transformer/、text_encoder/、vae/ 等，~144GB
 numactl --cpunodebind=0 --membind=0 uv run python infer.py \
   --prompt "A red panda sipping tea in a sunlit kitchen, cinematic lighting" \
-  --frames 73 --steps 50 --out out/smoke
+  --frames 124 --steps 50 --out out/smoke
 ```
 
 首次推理预计 20–40 分钟（PCIe offload + 50 步）。**不要因慢而打断或加并行优化**。
@@ -59,7 +59,7 @@ M0 过后紧接着验证 M0.5：`uv run h3-server --device cuda:0` 起服务，�
 
 1. **先诊断，后动手**：任何报错先读完整 traceback，定位到文件/行号，给出假设再改。禁止"试一下换 XXX"式盲改。
 2. **API 适配原则**：ModularPipeline 的参数名、返回结构以所装 diffusers 版本为准（直接读 `python -c "import diffusers, inspect; ..."` 或 site-packages 源码）；引擎已做签名自省（`_build_kwargs`），优先更新 `_PARAM_CANDIDATES` 而不是重写调用。
-3. **验证方式**：环境类问题用最小复现（`python -c "..."`）；改动后跑 `--frames 73` 冒烟验证，不允许"看起来对"就交付。
+3. **验证方式**：环境类问题用最小复现（`python -c "..."`）；改动后跑 `--frames 124` 冒烟验证，不允许"看起来对"就交付。
 4. **交付格式**：每轮结束输出三块——改动清单（文件+原因）、验证命令与结果、下一步建议。
 5. **失败处理**：无法解决时，输出最小复现步骤、诊断信息（torch/diffusers 版本、traceback 关键帧）、两个以上候选假设及各自验证成本。禁止静默降级（如偷偷换成 fp32 或砍掉音频不说）。
 
@@ -74,6 +74,14 @@ numactl --hardware          # 确认 NUMA 拓扑
 ```
 
 带宽实测（判断 offload 是否达 12–14GB/s 预期）：1GB pinned tensor 连续 H2D `copy_` 计时，低于 6GB/s 说明链路或锁页有问题，先修这个再谈推理。
+
+查看当前 workflow 的精确输入输出（替代猜参数名）：
+
+```bash
+python -c "from diffusers import ModularPipeline; \
+p = ModularPipeline.from_pretrained('modelsweights/MiniMax-H3', workflow='fl2va'); \
+print(p.doc)"   # 打印 fl2va 的全部输入（image / last_image / num_frames …）与输出
+```
 
 ## 完成定义（DoD）
 

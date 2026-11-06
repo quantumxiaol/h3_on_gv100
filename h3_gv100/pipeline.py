@@ -1,7 +1,8 @@
 """H3Engine — MiniMax H3 在 GV100 上的推理封装。
 
 Volta 特化（与 AGENT_PROMPT 锁定路线一致）：
-  1. 全链路 FP16（V100 无 BF16 单元）；dit_dtype=float32 仅作排障开关
+  1. 全链路 FP16（官方发布精度 BF16，V100 无 BF16 单元故 cast 到 FP16 加载，
+     动态范围收窄有溢出风险——花屏/NaN 时用 dit_dtype=float32 定位）
   2. SDPA attention；严禁 flash-attn / SageAttention（Ampere 起步，Volta 会崩）
   3. diffusers ModularPipeline + ComponentsManager.enable_auto_cpu_offload
      权重 ~123GB FP16 驻 512GB 内存，逐组件换入 32GB 显存
@@ -24,10 +25,12 @@ from pathlib import Path
 
 from .schemas import CreateVideoRequest
 
-# pipe.__call__ 参数名候选（按优先级）。以所装 diffusers 版本签名为准。
+# pipe.__call__ 参数名候选（按优先级）。image/last_image 已对 diffusers v0.42.1 源码核实；
+# 其余以所装版本签名（或 pipe.doc）为准。
 _PARAM_CANDIDATES: dict[str, tuple[str, ...]] = {
     "prompt": ("prompt",),
     "image": ("image", "first_frame", "first_frames", "condition_image", "reference_image", "images"),
+    "last_image": ("last_image", "last_frame", "final_frame"),
     "height": ("height",),
     "width": ("width",),
     "num_frames": ("num_frames", "frames"),
@@ -201,10 +204,13 @@ class H3Engine:
             p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
         )
         print(f"[engine] pipe.__call__ params: {sorted(self._call_params)}")
+        doc = getattr(pipe, "doc", None)
+        if doc:  # MiniMaxH3ModularPipeline.doc：当前 workflow 的精确输入/输出说明
+            print(f"[engine] pipe.doc:\n{doc}")
         self._pipe = pipe
 
     # ── 推理 ────────────────────────────────────────────────
-    def _build_kwargs(self, req: CreateVideoRequest, image) -> dict:
+    def _build_kwargs(self, req: CreateVideoRequest, image, last_image=None) -> dict:
         """按所装 diffusers 版本的签名组装调用参数。"""
         import torch
 
@@ -212,6 +218,7 @@ class H3Engine:
         values = {
             "prompt": req.prompt,
             "image": image,
+            "last_image": last_image,
             "height": req.height,
             "width": req.width,
             "num_frames": req.frames,
@@ -233,12 +240,13 @@ class H3Engine:
                     kwargs[_PARAM_CANDIDATES[logical][0]] = value
                 elif logical in ("prompt", "num_frames", "num_inference_steps"):
                     missing.append(logical)
-        if req.image_b64 and not any(k in kwargs for k in _PARAM_CANDIDATES["image"]):
-            raise RuntimeError(
-                "当前 diffusers 版本的 pipe.__call__ 不接受任何已知的首帧图参数"
-                f"（候选 {_PARAM_CANDIDATES['image']}），签名：{sorted(self._call_params)}。"
-                "请按 site-packages 源码更新 h3_gv100/pipeline.py 的 _PARAM_CANDIDATES。"
-            )
+        for logical, b64 in (("image", req.image_b64), ("last_image", req.last_image_b64)):
+            if b64 and not any(k in kwargs for k in _PARAM_CANDIDATES[logical]):
+                raise RuntimeError(
+                    f"当前 diffusers 版本的 pipe.__call__ 不接受任何已知的 {logical} 参数"
+                    f"（候选 {_PARAM_CANDIDATES[logical]}），签名：{sorted(self._call_params)}。"
+                    "请按 site-packages 源码（或 pipe.doc）更新 h3_gv100/pipeline.py 的 _PARAM_CANDIDATES。"
+                )
         if missing:
             raise RuntimeError(
                 f"pipe.__call__ 缺少必要参数 {missing}，签名：{sorted(self._call_params)}。"
@@ -259,8 +267,11 @@ class H3Engine:
         image = None
         if req.image_b64:
             image = self._decode_image(req.image_b64, req.width, req.height)
+        last_image = None
+        if req.last_image_b64:
+            last_image = self._decode_image(req.last_image_b64, req.width, req.height)
 
-        kwargs = self._build_kwargs(req, image)
+        kwargs = self._build_kwargs(req, image, last_image)
         print(f"[engine] call kwargs: {sorted(kwargs)}")
 
         t0 = time.time()

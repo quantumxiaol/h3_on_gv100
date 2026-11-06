@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import base64
 import binascii
+import math
+
+# diffusers 文档：num_frames 向上对齐 17n+5，且时长须在 5–15 秒（24fps）
+MIN_FRAMES = 124  # 17*7+5 ≈ 5.2s
+MAX_FRAMES = 345  # 17*20+5 ≈ 14.4s
 
 
-def snap_to_grid(frames: int) -> int:
-    """H3 帧数网格 17n+5，最少 73（约 3 秒 @24fps）。"""
-    n = max(4, round((frames - 5) / 17))
-    return 17 * n + 5
+def snap_frames(frames: int) -> int:
+    """H3 帧数：向上对齐 17n+5，并夹到 [124, 345]（5–15s @24fps）。"""
+    n = max(0, math.ceil((frames - 5) / 17))
+    snapped = 17 * n + 5
+    return max(MIN_FRAMES, min(MAX_FRAMES, snapped))
 
 
 def snap_to_32(v: int) -> int:

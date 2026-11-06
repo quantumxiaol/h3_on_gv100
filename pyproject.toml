@@ -29,14 +29,20 @@ h3-imagine = "tools.imagine:main"
 [project.optional-dependencies]
 # ── GV100 服务端（Ubuntu + 2x Quadro GV100 32GB）──────────────
 # 推理 + API 服务。安装：uv sync --extra server --extra cu126
+# 版本下限依据官方 requirements.txt（MiniMax-AI/MiniMax-H3）：
+#   diffusers 的 H3 modular pipeline 在 0.39.0 之后合入（v0.42.1 已确认包含）
+#   Qwen3-VL conditioner 需要 transformers>=4.57
 server = [
     "torch==2.8.0",
-    "diffusers>=0.36.0",
-    "transformers>=4.56.0",
+    "torchvision>=0.19.0",
+    "diffusers>=0.40.0",
+    "transformers>=4.57.0",
     "accelerate>=1.0.0",
     "safetensors",
     "sentencepiece",
-    "einops>=0.7.0",
+    "einops>=0.8.0",
+    "PyYAML>=6.0.1",
+    "av>=11.0.0",
     "numpy",
     "Pillow",
     "fastapi>=0.115.0",
@@ -52,15 +58,19 @@ stable = [
 ]
 cpu = [
     "torch==2.8.0",
+    "torchvision",  # 与 torch 同源 wheel（见 [tool.uv.sources]）
 ]
 cu126 = [
     "torch==2.8.0",
+    "torchvision",  # 与 torch 同源 wheel（见 [tool.uv.sources]）
 ]
 cu128 = [
     "torch==2.8.0",
+    "torchvision",  # 与 torch 同源 wheel（见 [tool.uv.sources]）
 ]
 cu129 = [
     "torch==2.8.0",
+    "torchvision",  # 与 torch 同源 wheel（见 [tool.uv.sources]）
 ]
 # 模型权重下载（scripts/download_modelscope.py / download_huggingface.py）
 # pysocks/socksio：本机出口走企业 VPN 的 SOCKS5 代理（ALL_PROXY=socks5://…），
@@ -88,6 +98,13 @@ conflicts = [
 
 [tool.uv.sources]
 torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-cu129", extra = "cu129" },
+]
+# torchvision 的 wheel 与 torch 同源，必须跟着变体走，否则会混入不兼容的 CUDA 构建
+torchvision = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu126", extra = "cu126" },
   { index = "pytorch-cu128", extra = "cu128" },

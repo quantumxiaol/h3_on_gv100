@@ -10,7 +10,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from .common import snap_to_32, snap_to_grid
+from .common import MAX_FRAMES, MIN_FRAMES, snap_frames, snap_to_32
 
 
 class JobState(str, Enum):
@@ -25,9 +25,13 @@ class CreateVideoRequest(BaseModel):
 
     prompt: str
     image_b64: str | None = Field(default=None, description="首帧参考图 PNG/JPEG/WebP 的 base64")
+    last_image_b64: str | None = Field(default=None, description="尾帧参考图 base64；与 image_b64 组合成 FL2VA 首尾帧，单独传则为 L2VA")
     width: int = 960
     height: int = 544
-    frames: int = Field(default=73, description="自动对齐到 17n+5")
+    frames: int = Field(
+        default=MIN_FRAMES,
+        description=f"向上对齐 17n+5 并夹到 [{MIN_FRAMES}, {MAX_FRAMES}]（5–15s @24fps）",
+    )
     steps: int = Field(default=50, description="基线 50；Turbo LoRA 后 8")
     seed: int = 42
     fps: int = 24
@@ -35,7 +39,7 @@ class CreateVideoRequest(BaseModel):
     def normalized(self) -> CreateVideoRequest:
         return self.model_copy(
             update={
-                "frames": snap_to_grid(self.frames),
+                "frames": snap_frames(self.frames),
                 "width": snap_to_32(self.width),
                 "height": snap_to_32(self.height),
             }

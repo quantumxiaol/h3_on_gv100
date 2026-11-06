@@ -53,9 +53,10 @@ def main() -> None:
     s = sub.add_parser("submit")
     s.add_argument("--prompt", required=True)
     s.add_argument("--image", default=None, help="首帧参考图路径（图生视频）")
+    s.add_argument("--last-image", default=None, help="尾帧参考图路径（FL2VA 首尾帧 / L2VA）")
     s.add_argument("--width", type=int, default=960)
     s.add_argument("--height", type=int, default=544)
-    s.add_argument("--frames", type=int, default=73)
+    s.add_argument("--frames", type=int, default=124, help="向上对齐 17n+5，范围 124–345（5–15s）")
     s.add_argument("--steps", type=int, default=50)
     s.add_argument("--seed", type=int, default=42)
     s.add_argument("--wait", action="store_true", help="提交后轮询到完成并下载")
@@ -87,9 +88,11 @@ def main() -> None:
         from h3_gv100.schemas import CreateVideoRequest
 
         image_b64 = b64encode(Path(args.image).read_bytes()) if args.image else None
+        last_b64 = b64encode(Path(args.last_image).read_bytes()) if args.last_image else None
         req = CreateVideoRequest(
             prompt=args.prompt,
             image_b64=image_b64,
+            last_image_b64=last_b64,
             width=args.width,
             height=args.height,
             frames=args.frames,

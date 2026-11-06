@@ -205,7 +205,7 @@ def imagine(
     quality: str = "high",
     width: int = 960,
     height: int = 544,
-    frames: int = 73,
+    frames: int = 124,
     steps: int = 50,
     seed: int = 42,
     out_dir: str | Path = "out/imagine",

@@ -31,9 +31,10 @@ def main() -> int:
     p.add_argument("--model", default="modelsweights/MiniMax-H3")
     p.add_argument("--prompt", required=True)
     p.add_argument("--image", default=None, help="首帧参考图路径（图生视频）")
+    p.add_argument("--last-image", default=None, help="尾帧参考图路径（FL2VA 首尾帧 / L2VA）")
     p.add_argument("--width", type=int, default=960)
     p.add_argument("--height", type=int, default=544)
-    p.add_argument("--frames", type=int, default=124, help="会自动对齐到 17n+5")
+    p.add_argument("--frames", type=int, default=124, help="向上对齐 17n+5，范围 124–345（5–15s）")
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--fps", type=int, default=24)
@@ -45,16 +46,21 @@ def main() -> int:
     args = p.parse_args()
 
     image_b64 = None
-    if args.image:
+    if args.image or args.last_image:
         from pathlib import Path
 
         from h3_gv100.common import b64encode
 
+    if args.image:
         image_b64 = b64encode(Path(args.image).read_bytes())
+    last_b64 = None
+    if args.last_image:
+        last_b64 = b64encode(Path(args.last_image).read_bytes())
 
     req = CreateVideoRequest(
         prompt=args.prompt,
         image_b64=image_b64,
+        last_image_b64=last_b64,
         width=args.width,
         height=args.height,
         frames=args.frames,
