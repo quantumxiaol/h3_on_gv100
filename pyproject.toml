@@ -1,0 +1,119 @@
+[project]
+name = "h3-on-gv100"
+version = "0.1.0"
+authors = [
+    {name = "quantumxiaol"},
+]
+description = "MiniMax H3 (33B) 图生视频 on 2x Quadro GV100: diffusers + CPU offload API server, plus local client workflow (idea -> image -> video)"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["video-generation", "diffusers", "minimax-h3", "gv100"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+
+# ── 基础依赖 = 本机（mac）客户端 ──────────────────────────────
+# 只负责调用：生图 API（OpenAI 兼容）+ 远端 H3 API，文件走 base64。
+# 不引入 torch / diffusers，mac 上直接 `uv sync` 即可。
+dependencies = [
+    "httpx>=0.28.0",
+    "pydantic>=2.9.2",
+    "python-dotenv>=1.1.1",
+]
+
+[project.scripts]
+h3-server = "tools.h3_server:main"
+h3-client = "tools.h3_client:main"
+h3-imagine = "tools.imagine:main"
+
+[project.optional-dependencies]
+# ── GV100 服务端（Ubuntu + 2x Quadro GV100 32GB）──────────────
+# 推理 + API 服务。安装：uv sync --extra server --extra cu126
+server = [
+    "torch==2.8.0",
+    "diffusers>=0.36.0",
+    "transformers>=4.56.0",
+    "accelerate>=1.0.0",
+    "safetensors",
+    "sentencepiece",
+    "einops>=0.7.0",
+    "numpy",
+    "Pillow",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-multipart>=0.0.18",
+    "imageio[ffmpeg]>=2.34.0",
+    "soundfile>=0.12.1",
+]
+# torch 变体：只决定 wheel 来源（照 fish-speech 的做法）。
+# GV100 实测可用的是 cu126（驱动 525.105.17 + minor-version compat）。
+stable = [
+    "torch==2.8.0",
+]
+cpu = [
+    "torch==2.8.0",
+]
+cu126 = [
+    "torch==2.8.0",
+]
+cu128 = [
+    "torch==2.8.0",
+]
+cu129 = [
+    "torch==2.8.0",
+]
+# 模型权重下载（scripts/download_modelscope.py）
+download = [
+    "modelscope>=1.17.1",
+]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu126" },
+    { extra = "cu128" },
+    { extra = "cu129" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-cu129", extra = "cu129" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["h3_gv100", "tools"]
+
+[tool.setuptools_scm]
