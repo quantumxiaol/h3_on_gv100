@@ -130,7 +130,8 @@ curl $H3_API_BASE_URL/v1/videos/<job_id> -H "Authorization: Bearer $H3_API_KEY"
 | `pipe.__call__` 参数报错 | diffusers 版本漂移。报错信息里带实际签名；对照 `site-packages/diffusers` 源码更新 [pipeline.py](h3_gv100/pipeline.py) 的 `_PARAM_CANDIDATES` |
 | CUDA 相关报错 | 先 `python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list())"` 最小复现；驱动 535 是 GV100 最后支持分支，谨慎升级 |
 | offload 异常慢 | 带宽实测：1GB pinned tensor 连续 H2D `copy_` 计时，预期 12–14GB/s，低于 6GB/s 先修链路/锁页 |
-| 下载中断 | 同一 `download_modelscope.py` 命令重跑（断点续传） |
+| 下载中断 | 同一下载命令重跑（断点续传） |
+| `Missing dependencies for SOCKS support` / 下载超时 | 本机出口走企业 VPN 的 SOCKS5 代理（`ALL_PROXY=socks5://…`），**直连出不去，不要 unset 代理**。`download` extra 已带 `pysocks`+`socksio`，保留代理环境变量重跑即可 |
 
 版本可回溯：环境跑通后 `uv pip freeze > requirements.txt` 提交；改动前 `pip show diffusers` 记录版本。
 
