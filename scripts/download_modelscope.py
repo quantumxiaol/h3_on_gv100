@@ -7,8 +7,7 @@
     # 或指定别的仓库/目录
     python scripts/download_modelscope.py --repo MiniMaxAI/MiniMax-H3 --local-dir modelsweights/MiniMax-H3
 
-HuggingFace 路线（备选）：HF_ENDPOINT=https://hf-mirror.com huggingface-cli download MiniMaxAI/MiniMax-H3 \
-    --local-dir modelsweights/MiniMax-H3
+HuggingFace 路线（备选，同一目标目录）：python scripts/download_huggingface.py
 """
 
 from __future__ import annotations

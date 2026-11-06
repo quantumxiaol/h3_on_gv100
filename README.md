@@ -54,8 +54,10 @@ AGENT_PROMPT.md      # 交接给 GV100 上 coding agent 的提示词
 
 ```bash
 cd ~/h3_on_gv100
-uv sync --extra server --extra cu126        # torch 2.8.0+cu126，与 fish-speech 实测环境一致
-uv run python scripts/download_modelscope.py  # 权重 -> modelsweights/MiniMax-H3（~123GB，可断点续传）
+uv sync --extra server --extra cu126 --extra download   # torch 2.8.0+cu126，与 fish-speech 实测环境一致
+# 权重 -> modelsweights/MiniMax-H3（~123GB，断点续传；两个脚本同一目标目录，二选一/换源续传均可）
+uv run python scripts/download_modelscope.py     # ModelScope（国内推荐）
+uv run python scripts/download_huggingface.py    # HuggingFace（默认走 hf-mirror.com）
 
 nvidia-smi                                   # 共享机纪律：先确认目标卡空闲
 numactl --cpunodebind=0 --membind=0 uv run h3-server --device cuda:0 --port 8010

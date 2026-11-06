@@ -21,7 +21,7 @@
 2. **精度**：全链路 FP16。V100 无 BF16 单元，严禁使用 bfloat16 加载。
 3. **attention**：SDPA。不要安装/启用 flash-attn、SageAttention、FlashAttention-2 —— Volta 会 kernel 崩溃或静默回退。
 4. **网格约束**：帧数必须 `17n+5`（73/90/107/124…），宽高 32 的倍数；H3 是 CFG 蒸馏模型，**不要加 negative prompt / guidance 参数**。
-5. **模型源**：`MiniMaxAI/MiniMax-H3`（ModelScope 用 `scripts/download_modelscope.py`；HuggingFace 设 `HF_ENDPOINT=https://hf-mirror.com` 下载）。
+5. **模型源**：`MiniMaxAI/MiniMax-H3`，下载到 `modelsweights/MiniMax-H3`——ModelScope 用 `scripts/download_modelscope.py`，HuggingFace 用 `scripts/download_huggingface.py`（默认 hf-mirror.com）；两脚本同一目标目录，可换源续传。
 6. **产物**：视频 24fps + 音频 32kHz，ffmpeg 合流 MP4。
 
 ## 硬性约束
